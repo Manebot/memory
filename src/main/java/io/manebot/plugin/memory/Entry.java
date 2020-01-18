@@ -9,7 +9,8 @@ public class Entry implements PluginEntry {
     @Override
     public void instantiate(Plugin.Builder builder) throws PluginLoadException {
         builder.setType(PluginType.FEATURE);
-
+    
+        Plugin audioPlugin = builder.requirePlugin(ManifestIdentifier.fromString("io.manebot.plugin:audio"));
         Plugin musicPlugin = builder.requirePlugin(ManifestIdentifier.fromString("io.manebot.plugin:music"));
 
         builder.addDatabase("memory", (modelConstructor) -> {
@@ -18,6 +19,6 @@ public class Entry implements PluginEntry {
             modelConstructor.registerEntity(Memory.class);
         });
 
-        builder.setInstance(Memory.class, (plugin) -> new Memory(plugin));
+        builder.setInstance(Memory.class, (plugin) -> new Memory(plugin, audioPlugin, musicPlugin));
     }
 }
