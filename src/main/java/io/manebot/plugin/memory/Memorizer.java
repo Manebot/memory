@@ -5,6 +5,7 @@ import io.manebot.plugin.audio.api.AudioConnection;
 import io.manebot.plugin.audio.api.AudioRegistration;
 import io.manebot.plugin.audio.channel.AudioChannel;
 import io.manebot.plugin.audio.mixer.Mixer;
+import io.manebot.plugin.audio.mixer.filter.type.FilterGain;
 import io.manebot.plugin.audio.mixer.input.*;
 import io.manebot.plugin.audio.mixer.output.PipedMixerSink;
 import io.manebot.plugin.audio.mixer.output.RingBufferSink;
@@ -62,7 +63,8 @@ public class Memorizer {
         this.sink = new RingBufferSink(format, seconds);
         this.silentMixerChannel = new SilentMixerChannel(getFormat().getSampleRate(), getFormat().getChannels());
         this.pipedMixerSink = new PipedMixerSink(format, channel.getMixer().getBufferSize());
-        this.loopbackPipe = new BasicMixerChannel(pipedMixerSink.getPipe());
+        this.loopbackPipe = new FilteredMixerChannel(pipedMixerSink.getPipe(),
+                new FilterGain(pipedMixerSink.getAudioFormat().getSampleRate(), 0.25f));
     }
 
     public void onParentMixerStart() {
