@@ -1,14 +1,15 @@
 package io.manebot.plugin.memory;
 
 import io.manebot.plugin.audio.Audio;
+import io.manebot.plugin.audio.api.AudioConnection;
+import io.manebot.plugin.audio.api.AudioRegistration;
 import io.manebot.plugin.audio.channel.AudioChannel;
 import io.manebot.plugin.audio.mixer.Mixer;
-import io.manebot.plugin.audio.mixer.input.AudioProvider;
-import io.manebot.plugin.audio.mixer.input.BasicMixerChannel;
-import io.manebot.plugin.audio.mixer.input.MixerChannel;
-import io.manebot.plugin.audio.mixer.input.SilentMixerChannel;
+import io.manebot.plugin.audio.mixer.input.*;
 import io.manebot.plugin.audio.mixer.output.PipedMixerSink;
 import io.manebot.plugin.audio.mixer.output.RingBufferSink;
+import io.manebot.plugin.audio.resample.FFmpegResampler;
+import io.manebot.plugin.music.source.AudioProtocol;
 
 import javax.sound.sampled.AudioFormat;
 import java.util.LinkedHashMap;
@@ -52,6 +53,8 @@ public class Memorizer {
 
     private final MixerChannel loopbackPipe;
 
+    private boolean registered = false;
+
     public Memorizer(Audio audio, AudioChannel channel, float seconds) {
         this.format = channel.getMixer().getAudioFormat();
         this.channel = channel;
@@ -62,18 +65,38 @@ public class Memorizer {
         this.loopbackPipe = new BasicMixerChannel(pipedMixerSink.getPipe());
     }
 
-    private void onParentMixerStart() {
-        mixer.addChannel(new BasicMixerChannel(loopbackPipe));
+    public void onParentMixerStart() {
+        mixer.removeChannel(loopbackPipe);
         mixer.removeChannel(silentMixerChannel);
-    }
 
-    private void onParentMixerStop() {
         mixer.addChannel(loopbackPipe);
-        mixer.removeChannel(silentMixerChannel);
+
+        mixer.setRunning(true);
     }
 
-    public float[] getBuffer() {
-        return sink.getBuffer();
+    public void onParentMixerStop() {
+        mixer.removeChannel(loopbackPipe);
+        mixer.removeChannel(silentMixerChannel);
+
+        if (!mixer.isPlaying()) {
+            silentMixerChannel.reset();
+            mixer.addChannel(silentMixerChannel);
+        }
+
+        mixer.setRunning(true);
+    }
+
+    public float[] copyBuffer() {
+        float[] src = sink.getBuffer();
+        synchronized (src) {
+            float[] copy = new float[src.length];
+            System.arraycopy(src, 0, copy, 0, src.length);
+            return copy;
+        }
+    }
+
+    public boolean isRegistered() {
+        return registered;
     }
 
     public boolean isRunning() {
@@ -84,6 +107,14 @@ public class Memorizer {
         return channel;
     }
 
+    public Mixer getMixer() {
+        return mixer;
+    }
+
+    public Mixer getParentMixer() {
+        return getChannel().getMixer();
+    }
+
     public void register() {
         this.mixer = this.audio.createMixer(
                 "memory:" + channel.getId(),
@@ -91,20 +122,53 @@ public class Memorizer {
                     builder.setFormat(channel.getMixer().getAudioSampleRate(), channel.getMixer().getAudioChannels());
                     builder.setBufferTime(channel.getMixer().getBufferSize() /
                             (channel.getMixer().getAudioChannels() * channel.getMixer().getAudioSampleRate()));
-                    builder.addSink(pipedMixerSink);
+                    builder.addSink(sink);
                 }
         );
 
         // Install silent channel when necessary
-        if (!getChannel().getMixer().isRunning())
+        if (!getChannel().getMixer().isPlaying())
             onParentMixerStop();
+        else
+            onParentMixerStart();
+
+        AudioRegistration registration = audio.getRegistration(getChannel().getPlatform());
+        if (registration == null) {
+            throw new IllegalArgumentException("No registration on platform " + getChannel().getPlatform());
+        }
+
+        AudioConnection connection = registration.getConnection();
+        if (connection == null) {
+            throw new IllegalArgumentException("No connection on platform " + getChannel().getPlatform());
+        }
+        connection.registerMixer(mixer);
+
+        mixer.setRunning(true);
+
+        registered = true;
     }
 
     public void unregister() {
         this.mixer.empty();
+
+        registered = false;
     }
 
     public void onUserBegin(AudioProvider provider) {
+        final AudioProvider originalProvider = provider;
+
+        if (provider.getFormat().getSampleRate() != mixer.getAudioSampleRate() ||
+                provider.getChannels() != mixer.getAudioChannels()) {
+            Logger.getGlobal().fine("Resampling provider " + provider.toString() + "...");
+
+            int bufferSize = (int)mixer.getAudioSampleRate() * mixer.getAudioChannels();
+            provider = new ResampledAudioProvider(provider, bufferSize, new FFmpegResampler(
+                    provider.getFormat(),
+                    mixer.getAudioFormat(),
+                    bufferSize
+            ));
+        }
+
         MixerChannel mixerChannel = new BasicMixerChannel(provider);
 
         Logger.getGlobal().fine(
@@ -113,9 +177,11 @@ public class Memorizer {
         );
 
         if (this.mixer != null) {
+            mixer.removeChannel(silentMixerChannel);
             mixer.addChannel(mixerChannel);
+            mixer.setRunning(true);
 
-            channelMap.put(provider, mixerChannel);
+            channelMap.put(originalProvider, mixerChannel);
 
             Logger.getGlobal().fine(
                     "Memorizer Channel " + mixerChannel.toString()
@@ -140,6 +206,14 @@ public class Memorizer {
             Logger.getGlobal().fine("Memorizer Channel " + mixerChannel.toString()
                     + " uninstalled from Mixer " + mixer.toString()
                     + " for " + provider);
+
+            if (!mixer.isPlaying()) {
+                mixer.removeChannel(silentMixerChannel);
+                silentMixerChannel.reset();
+                mixer.addChannel(silentMixerChannel);
+            }
+
+            mixer.setRunning(true);
         }
     }
 
