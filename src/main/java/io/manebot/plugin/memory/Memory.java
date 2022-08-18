@@ -1,5 +1,6 @@
 package io.manebot.plugin.memory;
 
+import io.manebot.conversation.Conversation;
 import io.manebot.database.Database;
 import io.manebot.event.EventHandler;
 import io.manebot.event.EventListener;
@@ -66,7 +67,10 @@ public class Memory implements PluginReference, EventListener {
         }
 
         return memorizerMap.computeIfAbsent(channel, (ch) -> {
-            channel.getConversation().checkPermission("memory.listen");
+            Conversation conversation = ch.getConversation();
+            if (conversation != null) {
+                ch.getConversation().checkPermission("memory.listen");
+            }
 
             Audio audio = audioPlugin.getInstance(Audio.class);
             Memorizer m = new Memorizer(audio, ch, seconds);
