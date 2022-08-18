@@ -1,11 +1,14 @@
 package io.manebot.plugin.memory;
 
+import io.manebot.plugin.Plugin;
 import io.manebot.plugin.audio.Audio;
 import io.manebot.plugin.audio.api.AudioConnection;
 import io.manebot.plugin.audio.api.AudioRegistration;
 import io.manebot.plugin.audio.channel.AudioChannel;
 import io.manebot.plugin.audio.mixer.Mixer;
+import io.manebot.plugin.audio.mixer.filter.MuxedMultiChannelFilter;
 import io.manebot.plugin.audio.mixer.filter.type.FilterGain;
+import io.manebot.plugin.audio.mixer.filter.type.FilterLimiter;
 import io.manebot.plugin.audio.mixer.input.*;
 import io.manebot.plugin.audio.mixer.output.PipedMixerSink;
 import io.manebot.plugin.audio.mixer.output.RingBufferSink;
@@ -125,6 +128,20 @@ public class Memorizer {
                     builder.setBufferTime(channel.getMixer().getBufferSize() /
                             (channel.getMixer().getAudioChannels() * channel.getMixer().getAudioSampleRate()));
                     builder.addSink(sink);
+
+                    builder.addFilter(mixer -> {
+                        Plugin plugin = audio.getPlugin();
+                        int channels = mixer.getAudioChannels();
+                        float sampleRate = mixer.getAudioSampleRate();
+
+                        float limiterThreshold = Float.parseFloat(plugin.getProperty("limiterThreshold", "0.7"));
+                        float limiterAttack = Float.parseFloat(plugin.getProperty("limiterAttack", "1"));
+                        float limiterRelease = Float.parseFloat(plugin.getProperty("limiterRelease", "0.0001"));
+                        float limiterSlope = Float.parseFloat(plugin.getProperty("limiterSlope", "0.5"));
+                        return MuxedMultiChannelFilter.from(channels, (ch) -> new FilterLimiter(
+                                sampleRate, limiterThreshold, limiterAttack, limiterRelease, limiterSlope
+                        ));
+                    });
                 }
         );
 
