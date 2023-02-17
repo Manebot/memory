@@ -87,7 +87,10 @@ public class MemoryCommand extends AnnotatedCommandExecutor {
 
         Track memoryTrack;
         try (AudioChannel.Ownership ownership = channel.obtainChannel(sender.getPlatformUser().getAssociation())) {
+            Thread.sleep(1000L);
+
             memoryTrack = save((User) sender.getUser(), memorizer, community);
+            memorizer.reset();
         }
 
         sender.sendMessage("Memory saved as \"" + memoryTrack.getName() + "\".");

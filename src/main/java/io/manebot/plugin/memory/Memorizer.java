@@ -16,6 +16,7 @@ import io.manebot.plugin.audio.resample.FFmpegResampler;
 import io.manebot.plugin.music.source.AudioProtocol;
 
 import javax.sound.sampled.AudioFormat;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.logging.Level;
@@ -77,6 +78,11 @@ public class Memorizer {
         mixer.addChannel(loopbackPipe);
 
         mixer.setRunning(true);
+
+        if (mixer.isPlaying()) {
+            getParentMixer().removeSink(pipedMixerSink);
+            getParentMixer().addSink(pipedMixerSink);
+        }
     }
 
     public void onParentMixerStop() {
@@ -86,6 +92,7 @@ public class Memorizer {
         if (!mixer.isPlaying()) {
             silentMixerChannel.reset();
             mixer.addChannel(silentMixerChannel);
+            getParentMixer().removeSink(pipedMixerSink);
         }
 
         mixer.setRunning(true);
@@ -238,5 +245,9 @@ public class Memorizer {
 
     public AudioFormat getFormat() {
         return format;
+    }
+
+    public void reset() {
+        Arrays.fill(sink.getBuffer(), 0f);
     }
 }
